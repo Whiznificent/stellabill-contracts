@@ -245,7 +245,7 @@ pub use types::{
     GlobalCapDefaultUpdatedEvent, LifetimeCapUpdatedEvent, MerchantCapDefaultUpdatedEvent,
     OperatorRemovedEvent, OperatorSetEvent,
     PrepaidQueryRequest, PrepaidQueryResult, ReconciliationProof, ReconciliationSummaryPage,
-    TokenLiabilities,
+    SchemaMigratedEvent, TokenLiabilities,
 };
 
 /// Maximum subscription ID this contract will ever allocate.
@@ -946,6 +946,24 @@ impl SubscriptionVault {
         );
 
         Ok(out)
+    }
+
+    /// Migrate the on-chain schema version to the current binary version.
+    ///
+    /// This is an admin-only entrypoint that checks the stored schema version
+    /// and runs any registered forward upgrade closures before updating the
+    /// on-chain version key.
+    ///
+    /// # Auth
+    ///
+    /// Admin only.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`] — Caller is not the stored admin.
+    /// * [`Error::SchemaVersionTooHigh`] — The on-chain schema version is newer than this binary.
+    pub fn migrate_schema(env: Env, admin: Address) -> Result<(), Error> {
+        admin::do_migrate_schema(&env, admin)
     }
 
     // ── Subscription Lifecycle ────────────────────────────────────────────────

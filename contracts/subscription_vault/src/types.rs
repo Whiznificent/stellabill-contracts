@@ -476,6 +476,16 @@ pub struct MigrationExportEvent {
     pub timestamp: u64,
 }
 
+/// Event emitted when the contract schema is upgraded on-chain.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct SchemaMigratedEvent {
+    pub from: u32,
+    pub to: u32,
+    pub admin: Address,
+    pub timestamp: u64,
+}
+
 /// Defines a reusable subscription plan template.
 ///
 /// Plan templates allow merchants to define standard subscription offerings

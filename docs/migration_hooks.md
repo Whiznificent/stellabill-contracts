@@ -30,6 +30,12 @@ The following entrypoints are implemented in `contracts/subscription_vault/src/l
   - `limit` is capped at `MAX_EXPORT_LIMIT` (currently 100) to keep responses bounded.
   - Emits a `migration_export` event that includes `start_id`, `limit`, and `exported`.
 
+- `migrate_schema(admin)`
+  - Compares the on-chain `SchemaVersion` key against the binary's `STORAGE_VERSION`.
+  - Rejects downgrade attempts when the stored version is newer than the current binary.
+  - Runs forward migration closures for older on-chain versions, then updates `SchemaVersion`.
+  - Emits a `schema_migrated` event only when an actual upgrade occurs.
+
 All export functions require **admin authentication** and are read-only.
 
 ## Control and authorization

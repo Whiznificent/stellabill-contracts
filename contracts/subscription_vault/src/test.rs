@@ -7393,8 +7393,83 @@ mod storage_layout {
                 .expect("schema_version must be set after init")
         });
 
-        // Must be a positive version number (current: 2).
-        assert!(version >= 1, "schema version must be >= 1, got {version}");
+        assert_eq!(version, crate::STORAGE_VERSION);
+    }
+
+    #[test]
+    fn test_migrate_schema_same_version_is_noop() {
+        let (env, client, _token, admin) = setup_test_env();
+        let before_events = env.events().all().len();
+
+        client.migrate_schema(&admin);
+
+        let after_events = env.events().all().len();
+        assert_eq!(before_events, after_events, "same-version migration should not emit an event");
+
+        let version: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&DataKey::SchemaVersion)
+                .expect("schema_version must still be present")
+        });
+        assert_eq!(version, crate::STORAGE_VERSION);
+    }
+
+    #[test]
+    fn test_migrate_schema_rejects_downgrade() {
+        let (env, client, _token, admin) = setup_test_env();
+
+        env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION.saturating_add(1));
+        });
+
+        let result = client.try_migrate_schema(&admin);
+        assert_eq!(result.unwrap_err(), Error::SchemaVersionTooHigh);
+    }
+
+    #[test]
+    fn test_migrate_schema_requires_admin() {
+        let (env, client, _token, admin) = setup_test_env();
+        let stranger = Address::generate(&env);
+
+        let result = client.try_migrate_schema(&stranger);
+        assert_eq!(result.unwrap_err(), Error::Unauthorized);
+
+        // Ensure the stored version is unchanged.
+        let version: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&DataKey::SchemaVersion)
+                .expect("schema_version must still be present")
+        });
+        assert_eq!(version, crate::STORAGE_VERSION);
+    }
+
+    #[test]
+    fn test_migrate_schema_upgrades_legacy_version() {
+        let (env, client, _token, admin) = setup_test_env();
+
+        env.as_contract(&client.address, || {
+            env.storage().instance().set(&DataKey::SchemaVersion, &1u32);
+        });
+
+        client.migrate_schema(&admin);
+
+        let version: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&DataKey::SchemaVersion)
+                .expect("schema_version must be present after migration")
+        });
+        assert_eq!(version, crate::STORAGE_VERSION);
+
+        let events = env.events().all();
+        assert!(events.iter().any(|event| {
+            Symbol::from_val(&env, &event.1.get(0).expect("missing topic 0"))
+                == Symbol::new(&env, "schema_migrated")
+        }), "schema_migrated event must be emitted on upgrade");
     }
 
     // -------------------------------------------------------------------------

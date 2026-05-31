@@ -6,7 +6,7 @@
 
 use crate::types::{
     AcceptedToken, AdminRotatedEvent, BatchChargeResult, DataKey, Error, RecoveryEvent,
-    RecoveryReason,
+    RecoveryReason, SchemaMigratedEvent,
 };
 use crate::{charge_core::{charge_one, charge_usage_one}, ChargeExecutionResult};
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
@@ -49,10 +49,58 @@ pub fn do_init(
     instance.set(&DataKey::Admin, &admin);
     instance.set(&DataKey::MinTopup, &min_topup);
     instance.set(&DataKey::GracePeriod, &grace_period);
-    instance.set(&DataKey::SchemaVersion, &2u32);
+    instance.set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION);
     env.events().publish(
         (Symbol::new(env, "initialized"),),
         (token, admin, min_topup, grace_period),
+    );
+    Ok(())
+}
+
+pub fn do_migrate_schema(env: &Env, admin: Address) -> Result<(), Error> {
+    require_admin_auth(env, &admin)?;
+    let instance = env.storage().instance();
+
+    let stored_version: u32 = match instance.get(&DataKey::SchemaVersion) {
+        Some(v) => v,
+        None => {
+            // Legacy deployments may never have written the schema version key.
+            // Bootstrapping it here preserves the current known shape.
+            instance.set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION);
+            return Ok(());
+        }
+    };
+
+    if stored_version > crate::STORAGE_VERSION {
+        return Err(Error::SchemaVersionTooHigh);
+    }
+    if stored_version == crate::STORAGE_VERSION {
+        return Ok(());
+    }
+
+    let from = stored_version;
+    let mut next_version = stored_version;
+    while next_version < crate::STORAGE_VERSION {
+        match next_version {
+            1 => {
+                // Forward-compatible shape migration from version 1 to 2.
+                // No structural changes were required for this upgrade; only
+                // the on-chain schema version key needs to advance.
+                next_version = 2;
+            }
+            _ => return Err(Error::InvalidInput),
+        }
+    }
+
+    instance.set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION);
+    env.events().publish(
+        (Symbol::new(env, "schema_migrated"),),
+        SchemaMigratedEvent {
+            from,
+            to: crate::STORAGE_VERSION,
+            admin,
+            timestamp: env.ledger().timestamp(),
+        },
     );
     Ok(())
 }

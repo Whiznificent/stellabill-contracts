@@ -2713,7 +2713,6 @@ impl SubscriptionVault {
     ) -> Option<crate::types::MerchantConfig> {
         merchant::get_merchant_config(&env, merchant)
     }
-
 }
 
 #[cfg(test)]

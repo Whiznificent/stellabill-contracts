@@ -1237,21 +1237,6 @@ pub struct UsageStatementEvent {
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsageChargeResult {
-    /// Usage charge was accepted and funds were debited.
-    Charged = 0,
-    /// Duplicate reference — same off-chain event already processed.
-    Replay = 1,
-    /// Charge attempted too soon after the previous charge (burst protection).
-    BurstLimitExceeded = 2,
-    /// Rate-limit window call count exhausted.
-    RateLimitExceeded = 3,
-    /// Charge would exceed the per-period usage cap.
-    UsageCapExceeded = 4,
-}
-
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UsageChargeResult {
     Charged = 0,
     InsufficientBalance = 1,
     LifetimeCapReached = 2,

@@ -228,7 +228,7 @@ pub use types::{
     EmergencyStopEnabledEvent, Error, FundsDepositedEvent, LifetimeCapReachedEvent, MerchantConfig,
     MerchantConfigInitializedEvent, MerchantConfigUpdatedEvent, MerchantPausedEvent,
     MerchantUnpausedEvent, MerchantWithdrawalEvent, MetadataDeletedEvent,
-    MetadataSetEvent, MigrationExportEvent, SchemaMigratedEvent, SchemaVersionTooHigh, NextChargeInfo, OneOffChargedEvent, OracleConfig,
+    MetadataSetEvent, MigrationExportEvent, SchemaMigratedEvent, NextChargeInfo, OneOffChargedEvent, OracleConfig,
     OraclePrice, PartialRefundEvent, PlanTemplate, PlanTemplateUpdatedEvent,
     ProtocolFeeChargedEvent, ProtocolFeeConfiguredEvent, RecoveryEvent, RecoveryReason,
     Subscription, SubscriptionCancelledEvent, SubscriptionChargeFailedEvent,

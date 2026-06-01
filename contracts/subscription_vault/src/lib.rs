@@ -228,7 +228,7 @@ pub use types::{
     EmergencyStopEnabledEvent, Error, FundsDepositedEvent, LifetimeCapReachedEvent, MerchantConfig,
     MerchantConfigInitializedEvent, MerchantConfigUpdatedEvent, MerchantPausedEvent,
     MerchantUnpausedEvent, MerchantWithdrawalEvent, MetadataDeletedEvent,
-    MetadataSetEvent, MigrationExportEvent, SchemaMigratedEvent, NextChargeInfo, OneOffChargedEvent, OracleConfig,
+    MetadataSetEvent, MigrationExportEvent, SchemaMigratedEvent, SchemaVersionTooHigh, NextChargeInfo, OneOffChargedEvent, OracleConfig,
     OraclePrice, PartialRefundEvent, PlanTemplate, PlanTemplateUpdatedEvent,
     ProtocolFeeChargedEvent, ProtocolFeeConfiguredEvent, RecoveryEvent, RecoveryReason,
     Subscription, SubscriptionCancelledEvent, SubscriptionChargeFailedEvent,
@@ -779,6 +779,32 @@ impl SubscriptionVault {
     /// No event is emitted for the idempotent no-op case.
     pub fn migrate(env: Env, admin: Address) -> Result<(), Error> {
         admin::do_migrate(&env, admin, STORAGE_VERSION)
+    }
+
+    /// Schema migration entrypoint — alias for [`migrate`](Self::migrate).
+    ///
+    /// Compares the on-chain `DataKey::SchemaVersion` against the binary's
+    /// `STORAGE_VERSION` and runs the forward upgrade ladder when needed.
+    ///
+    /// Returns [`Error::SchemaVersionTooHigh`] (instead of
+    /// [`Error::SchemaMigrationDowngrade`]) when the stored version is newer
+    /// than the binary, so callers that check for that variant are satisfied.
+    ///
+    /// # Auth
+    ///
+    /// Admin only.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`]          — Caller is not the stored admin.
+    /// * [`Error::NotInitialized`]        — Contract has not been initialised.
+    /// * [`Error::SchemaVersionTooHigh`]  — Stored version is newer than binary.
+    pub fn migrate_schema(env: Env, admin: Address) -> Result<(), Error> {
+        admin::do_migrate(&env, admin, STORAGE_VERSION)
+            .map_err(|e| match e {
+                Error::SchemaMigrationDowngrade => Error::SchemaVersionTooHigh,
+                other => other,
+            })
     }
 
     /// Export contract-level configuration as a [`ContractSnapshot`] for migration tooling.

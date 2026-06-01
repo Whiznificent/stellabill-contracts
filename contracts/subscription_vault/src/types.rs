@@ -393,6 +393,10 @@ pub enum Error {
     // --- Schema Migration (9100-9199) ---
     /// Stored schema version is newer than the binary's STORAGE_VERSION; downgrade rejected.
     SchemaMigrationDowngrade = 9101,
+    /// Alias for [`SchemaMigrationDowngrade`]: stored version is higher than the binary version.
+    ///
+    /// Returned by the `migrate_schema` entrypoint when a downgrade is attempted.
+    SchemaVersionTooHigh = 9102,
 }
 
 impl Error {

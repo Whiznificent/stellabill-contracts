@@ -228,7 +228,7 @@ pub use types::{
     EmergencyStopEnabledEvent, Error, FundsDepositedEvent, LifetimeCapReachedEvent, MerchantConfig,
     MerchantConfigInitializedEvent, MerchantConfigUpdatedEvent, MerchantPausedEvent,
     MerchantUnpausedEvent, MerchantWithdrawalEvent, MetadataDeletedEvent,
-    MetadataSetEvent, MigrationExportEvent, NextChargeInfo, OneOffChargedEvent, OracleConfig,
+    MetadataSetEvent, MigrationExportEvent, SchemaMigratedEvent, NextChargeInfo, OneOffChargedEvent, OracleConfig,
     OraclePrice, PartialRefundEvent, PlanTemplate, PlanTemplateUpdatedEvent,
     ProtocolFeeChargedEvent, ProtocolFeeConfiguredEvent, RecoveryEvent, RecoveryReason,
     Subscription, SubscriptionCancelledEvent, SubscriptionChargeFailedEvent,
@@ -743,6 +743,43 @@ impl SubscriptionVault {
     }
 
     // ── Migration / Export ────────────────────────────────────────────────────
+
+    /// Run the schema migration entry point. Admin only.
+    ///
+    /// Compares the on-chain stored `DataKey::SchemaVersion` against the
+    /// binary's `STORAGE_VERSION` constant and executes any registered upgrade
+    /// closures for the `(from, to)` version pair.
+    ///
+    /// # Behaviour
+    ///
+    /// | Stored version | Binary version | Result |
+    /// |:---:|:---:|:---|
+    /// | `stored > binary` | — | `Err(SchemaMigrationDowngrade)` — downgrade rejected |
+    /// | `stored == binary` | — | `Ok(())` — idempotent no-op |
+    /// | `stored < binary` | — | Runs upgrade ladder, writes new version, emits event |
+    ///
+    /// # Arguments
+    ///
+    /// * `admin` — Must match the stored admin.
+    ///
+    /// # Auth
+    ///
+    /// Admin only.
+    ///
+    /// # Errors
+    ///
+    /// * [`Error::Unauthorized`]             — Caller is not the stored admin.
+    /// * [`Error::NotInitialized`]           — Contract has not been initialised.
+    /// * [`Error::SchemaMigrationDowngrade`] — Stored version is newer than binary.
+    ///
+    /// # Events
+    ///
+    /// Emits [`SchemaMigratedEvent`] with `(admin, from_version, to_version, timestamp)`
+    /// **only** when an actual upgrade is performed (i.e. `stored < binary`).
+    /// No event is emitted for the idempotent no-op case.
+    pub fn migrate(env: Env, admin: Address) -> Result<(), Error> {
+        admin::do_migrate(&env, admin, STORAGE_VERSION)
+    }
 
     /// Export contract-level configuration as a [`ContractSnapshot`] for migration tooling.
     ///

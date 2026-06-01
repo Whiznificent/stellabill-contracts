@@ -3,7 +3,8 @@
 extern crate alloc;
 
 use soroban_sdk::{
-    testutils::Address as _, Address, Env, Symbol,
+    testutils::{Address as _, Events},
+    Address, Env, IntoVal, Symbol,
 };
 use subscription_vault::{
     SubscriptionVault, SubscriptionVaultClient, AdminRotatedEvent, NonceConsumedEvent,
@@ -89,10 +90,12 @@ fn test_subscription_created_event_topic_and_shape() {
                 subscription_id,
                 subscriber,
                 merchant,
+                token: token_address,
                 amount,
                 interval_seconds,
                 lifetime_cap: None,
                 expires_at: None,
+                timestamp: env.ledger().timestamp(),
             }.into_val(&env),
         )
     );

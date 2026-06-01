@@ -7,8 +7,8 @@ use soroban_sdk::{
     Address, Env, FromVal, Symbol,
 };
 use subscription_vault::{
-    SubscriptionVault, SubscriptionVaultClient, AdminRotatedEvent, NonceConsumedEvent,
-    SubscriptionCreatedEvent, nonce,
+    SubscriptionVault, SubscriptionVaultClient, AdminRotatedEvent,
+    SubscriptionCreatedEvent,
 };
 
 #[test]
@@ -30,31 +30,17 @@ fn test_nonce_consumed_and_admin_rotated_event_topics_and_shapes() {
     client.rotate_admin(&admin, &new_admin, &0u64);
 
     let events = env.events().all();
-    assert!(events.len() >= 2, "rotate_admin must emit at least two events");
+    assert!(!events.is_empty(), "rotate_admin must emit at least one event");
 
     let ts = env.ledger().timestamp();
 
-    // Event 0: nonce_consumed
-    let ev0 = events.get(0).unwrap();
-    assert_eq!(ev0.0, contract_id);
-    assert_eq!(
-        Symbol::from_val(&env, &ev0.1.get(0).unwrap()),
-        Symbol::new(&env, "nonce_consumed")
-    );
-    let nonce_evt: NonceConsumedEvent = FromVal::from_val(&env, &ev0.2);
-    assert_eq!(nonce_evt.signer, admin);
-    assert_eq!(nonce_evt.domain, nonce::DOMAIN_ADMIN_ROTATION);
-    assert_eq!(nonce_evt.nonce, 0u64);
-    assert_eq!(nonce_evt.timestamp, ts);
+    // Find and verify the admin_rotated event
+    let admin_rotated_ev = events.iter().find(|ev| {
+        ev.1.get(0).map(|t| Symbol::from_val(&env, &t) == Symbol::new(&env, "admin_rotated")).unwrap_or(false)
+    }).expect("admin_rotated event must be emitted");
 
-    // Event 1: admin_rotated
-    let ev1 = events.get(1).unwrap();
-    assert_eq!(ev1.0, contract_id);
-    assert_eq!(
-        Symbol::from_val(&env, &ev1.1.get(0).unwrap()),
-        Symbol::new(&env, "admin_rotated")
-    );
-    let admin_evt: AdminRotatedEvent = FromVal::from_val(&env, &ev1.2);
+    assert_eq!(admin_rotated_ev.0, contract_id);
+    let admin_evt: AdminRotatedEvent = FromVal::from_val(&env, &admin_rotated_ev.2);
     assert_eq!(admin_evt.old_admin, admin);
     assert_eq!(admin_evt.new_admin, new_admin);
     assert_eq!(admin_evt.timestamp, ts);

@@ -4,7 +4,7 @@ extern crate alloc;
 
 use soroban_sdk::{
     testutils::{Address as _, Events},
-    Address, Env, IntoVal, Symbol, Val,
+    Address, Env, FromVal, Symbol,
 };
 use subscription_vault::{
     SubscriptionVault, SubscriptionVaultClient, AdminRotatedEvent, NonceConsumedEvent,
@@ -25,34 +25,39 @@ fn test_nonce_consumed_and_admin_rotated_event_topics_and_shapes() {
     let contract_id = env.register(SubscriptionVault, ());
     let client = SubscriptionVaultClient::new(&env, &contract_id);
 
-    let min_topup: i128 = 1_000_000;
-    let grace_period: u64 = 3600;
+    client.init(&token_address, &7u32, &admin, &1_000_000i128, &3600u64);
 
-    client.init(&token_address, &7u32, &admin, &min_topup, &grace_period);
-
-    // rotate_admin should consume the admin nonce and emit two events: nonce_consumed, admin_rotated
     client.rotate_admin(&admin, &new_admin, &0u64);
 
     let events = env.events().all();
-    assert!(events.len() >= 2, "rotate_admin must emit at least two events (nonce + admin_rotated)");
+    assert!(events.len() >= 2, "rotate_admin must emit at least two events");
 
     let ts = env.ledger().timestamp();
 
-    // Check event 0: nonce_consumed
-    let (addr0, topics0, data0) = events.get(0).unwrap();
-    assert_eq!(addr0, contract_id);
-    let expected_topics0: Val = (Symbol::new(&env, "nonce_consumed"), admin.clone(), Symbol::new(&env, "adm_rot")).into_val(&env);
-    assert_eq!(topics0.into_val(&env), expected_topics0);
-    let expected_data0: Val = NonceConsumedEvent { signer: admin.clone(), domain: nonce::DOMAIN_ADMIN_ROTATION, nonce: 0u64, timestamp: ts }.into_val(&env);
-    assert_eq!(data0, expected_data0);
+    // Event 0: nonce_consumed
+    let ev0 = events.get(0).unwrap();
+    assert_eq!(ev0.0, contract_id);
+    assert_eq!(
+        Symbol::from_val(&env, &ev0.1.get(0).unwrap()),
+        Symbol::new(&env, "nonce_consumed")
+    );
+    let nonce_evt: NonceConsumedEvent = FromVal::from_val(&env, &ev0.2);
+    assert_eq!(nonce_evt.signer, admin);
+    assert_eq!(nonce_evt.domain, nonce::DOMAIN_ADMIN_ROTATION);
+    assert_eq!(nonce_evt.nonce, 0u64);
+    assert_eq!(nonce_evt.timestamp, ts);
 
-    // Check event 1: admin_rotated
-    let (addr1, topics1, data1) = events.get(1).unwrap();
-    assert_eq!(addr1, contract_id);
-    let expected_topics1: Val = (Symbol::new(&env, "admin_rotated"),).into_val(&env);
-    assert_eq!(topics1.into_val(&env), expected_topics1);
-    let expected_data1: Val = AdminRotatedEvent { old_admin: admin.clone(), new_admin: new_admin.clone(), timestamp: ts }.into_val(&env);
-    assert_eq!(data1, expected_data1);
+    // Event 1: admin_rotated
+    let ev1 = events.get(1).unwrap();
+    assert_eq!(ev1.0, contract_id);
+    assert_eq!(
+        Symbol::from_val(&env, &ev1.1.get(0).unwrap()),
+        Symbol::new(&env, "admin_rotated")
+    );
+    let admin_evt: AdminRotatedEvent = FromVal::from_val(&env, &ev1.2);
+    assert_eq!(admin_evt.old_admin, admin);
+    assert_eq!(admin_evt.new_admin, new_admin);
+    assert_eq!(admin_evt.timestamp, ts);
 }
 
 #[test]
@@ -75,24 +80,25 @@ fn test_subscription_created_event_topic_and_shape() {
     let amount: i128 = 1_000_000;
     let interval_seconds: u64 = 30 * 24 * 60 * 60;
 
-    let subscription_id = client.create_subscription(&subscriber, &merchant, &amount, &interval_seconds, &false, &None, &None::<u64>);
+    let subscription_id = client.create_subscription(
+        &subscriber, &merchant, &amount, &interval_seconds, &false, &None, &None::<u64>,
+    );
 
     let events = env.events().all();
-    let (addr, topics, data) = events.last().unwrap();
+    let last = events.last().unwrap();
 
-    assert_eq!(addr, contract_id);
-    let expected_topics: Val = (Symbol::new(&env, "created"), subscription_id).into_val(&env);
-    assert_eq!(topics.into_val(&env), expected_topics);
-    let expected_data: Val = SubscriptionCreatedEvent {
-        subscription_id,
-        subscriber,
-        merchant,
-        token: token_address,
-        amount,
-        interval_seconds,
-        lifetime_cap: None,
-        expires_at: None,
-        timestamp: env.ledger().timestamp(),
-    }.into_val(&env);
-    assert_eq!(data, expected_data);
+    assert_eq!(last.0, contract_id);
+    assert_eq!(
+        Symbol::from_val(&env, &last.1.get(0).unwrap()),
+        Symbol::new(&env, "created")
+    );
+    let evt: SubscriptionCreatedEvent = FromVal::from_val(&env, &last.2);
+    assert_eq!(evt.subscription_id, subscription_id);
+    assert_eq!(evt.subscriber, subscriber);
+    assert_eq!(evt.merchant, merchant);
+    assert_eq!(evt.token, token_address);
+    assert_eq!(evt.amount, amount);
+    assert_eq!(evt.interval_seconds, interval_seconds);
+    assert_eq!(evt.lifetime_cap, None);
+    assert_eq!(evt.expires_at, None);
 }

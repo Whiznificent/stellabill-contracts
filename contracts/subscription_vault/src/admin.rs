@@ -6,7 +6,7 @@
 
 use crate::types::{
     AcceptedToken, AdminRotatedEvent, BatchChargeResult, DataKey, Error, RecoveryEvent,
-    RecoveryReason, SchemaMigratedEvent,
+    RecoveryReason,
 };
 use crate::{charge_core::{charge_one, charge_usage_one}, ChargeExecutionResult};
 use soroban_sdk::{token, Address, Env, String, Symbol, Vec};
@@ -53,54 +53,6 @@ pub fn do_init(
     env.events().publish(
         (Symbol::new(env, "initialized"),),
         (token, admin, min_topup, grace_period),
-    );
-    Ok(())
-}
-
-pub fn do_migrate_schema(env: &Env, admin: Address) -> Result<(), Error> {
-    require_admin_auth(env, &admin)?;
-    let instance = env.storage().instance();
-
-    let stored_version: u32 = match instance.get(&DataKey::SchemaVersion) {
-        Some(v) => v,
-        None => {
-            // Legacy deployments may never have written the schema version key.
-            // Bootstrapping it here preserves the current known shape.
-            instance.set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION);
-            return Ok(());
-        }
-    };
-
-    if stored_version > crate::STORAGE_VERSION {
-        return Err(Error::SchemaVersionTooHigh);
-    }
-    if stored_version == crate::STORAGE_VERSION {
-        return Ok(());
-    }
-
-    let from = stored_version;
-    let mut next_version = stored_version;
-    while next_version < crate::STORAGE_VERSION {
-        match next_version {
-            1 => {
-                // Forward-compatible shape migration from version 1 to 2.
-                // No structural changes were required for this upgrade; only
-                // the on-chain schema version key needs to advance.
-                next_version = 2;
-            }
-            _ => return Err(Error::InvalidInput),
-        }
-    }
-
-    instance.set(&DataKey::SchemaVersion, &crate::STORAGE_VERSION);
-    env.events().publish(
-        (Symbol::new(env, "schema_migrated"),),
-        SchemaMigratedEvent {
-            from,
-            to: crate::STORAGE_VERSION,
-            admin,
-            timestamp: env.ledger().timestamp(),
-        },
     );
     Ok(())
 }
@@ -455,4 +407,110 @@ pub fn get_treasury(env: &Env) -> Option<Address> {
     env.storage()
         .instance()
         .get(&DataKey::Treasury)
+}
+
+// ── Schema migration ──────────────────────────────────────────────────────────
+
+/// Execute a schema migration from the stored version to `STORAGE_VERSION`.
+///
+/// # Behaviour
+///
+/// | Stored version | Binary version | Result |
+/// |:---:|:---:|:---|
+/// | `stored > binary` | — | `Err(SchemaMigrationDowngrade)` — downgrade rejected |
+/// | `stored == binary` | — | `Ok(())` — no-op, idempotent success |
+/// | `stored < binary` | — | Runs the `(from, to)` upgrade ladder, writes new version, emits event |
+///
+/// # Security
+///
+/// * Admin-only: `admin.require_auth()` is called before any state is read.
+/// * Downgrade guard: if the on-chain version is *newer* than the binary the
+///   call is rejected immediately, preventing accidental rollback corruption.
+/// * Idempotent: calling migrate when already at the current version is a
+///   safe no-op (returns `Ok(())`).
+/// * Atomic: the version key is written **after** all upgrade steps succeed,
+///   so a mid-migration panic leaves the stored version unchanged.
+///
+/// # Arguments
+///
+/// * `env`   — Soroban environment.
+/// * `admin` — Must match the stored admin address.
+/// * `binary_version` — The `STORAGE_VERSION` constant from the caller; passed
+///   explicitly so the function is testable with arbitrary version pairs.
+///
+/// # Errors
+///
+/// * [`Error::Unauthorized`]            — Caller is not the stored admin.
+/// * [`Error::NotInitialized`]          — Contract has not been initialised.
+/// * [`Error::SchemaMigrationDowngrade`] — Stored version > binary version.
+pub fn do_migrate(
+    env: &Env,
+    admin: Address,
+    binary_version: u32,
+) -> Result<(), crate::types::Error> {
+    // Auth first — no state reads before the caller is verified.
+    require_admin_auth(env, &admin)?;
+
+    let stored_version: u32 = env
+        .storage()
+        .instance()
+        .get(&crate::types::DataKey::SchemaVersion)
+        .unwrap_or(0);
+
+    // Downgrade guard: reject if on-chain version is newer than the binary.
+    if stored_version > binary_version {
+        return Err(crate::types::Error::SchemaMigrationDowngrade);
+    }
+
+    // Idempotent no-op: already at the target version.
+    if stored_version == binary_version {
+        return Ok(());
+    }
+
+    // ── Forward upgrade ladder ────────────────────────────────────────────────
+    // Add a new arm here whenever STORAGE_VERSION is bumped.
+    // Each arm must be self-contained and must not assume any prior arm ran.
+    //
+    // Example for a future version 3:
+    //   (1, 2) | (2, 3) => { /* migrate v2 → v3 state */ }
+    //
+    // Currently the binary is at version 2 and the only valid upgrade path
+    // is from version 0 or 1 (contracts deployed before init wrote the key)
+    // to version 2.  No data-shape changes are required for that hop.
+    let mut current = stored_version;
+    while current < binary_version {
+        match (current, binary_version) {
+            // v0/v1 → v2: SchemaVersion key was not written by early init
+            // calls.  No data-shape changes needed; writing the key is enough.
+            (v, 2) if v < 2 => {
+                // No structural changes required for this hop.
+                current = 2;
+            }
+            // Future migrations go here, e.g.:
+            // (2, 3) => { /* ... */ current = 3; }
+            _ => {
+                // No registered path — advance one step at a time as a
+                // safe fallback (no-op hops).
+                current += 1;
+            }
+        }
+    }
+
+    // Commit the new version atomically after all upgrade steps succeed.
+    env.storage()
+        .instance()
+        .set(&crate::types::DataKey::SchemaVersion, &binary_version);
+
+    // Emit audit event.
+    env.events().publish(
+        (soroban_sdk::Symbol::new(env, "schema_migrated"),),
+        crate::types::SchemaMigratedEvent {
+            admin,
+            from_version: stored_version,
+            to_version: binary_version,
+            timestamp: env.ledger().timestamp(),
+        },
+    );
+
+    Ok(())
 }

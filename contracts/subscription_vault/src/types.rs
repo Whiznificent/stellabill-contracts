@@ -1247,6 +1247,7 @@ pub enum UsageChargeResult {
     UsageCapExceeded = 4,
 }
 
+
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct UsageChargeRejectedEvent {
